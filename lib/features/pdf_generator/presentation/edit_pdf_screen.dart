@@ -46,6 +46,9 @@ class _EditPdfScreenState extends ConsumerState<EditPdfScreen> {
 
   OverlayItem? _selectedItem;
 
+  // Interaction state to disable PageView scrolling
+  bool _isInteracting = false;
+
   @override
   void initState() {
     super.initState();
@@ -96,7 +99,7 @@ class _EditPdfScreenState extends ConsumerState<EditPdfScreen> {
   }
 
   Future<void> _addTextOverlay(
-      {String text = '', Offset? position, Size? size}) async {
+      {String text = '', Offset? position, Size? normalizedSize}) async {
     final result = await showDialog<String>(
       context: context,
       builder: (context) => _TextEditDialog(initialText: text),
@@ -107,7 +110,8 @@ class _EditPdfScreenState extends ConsumerState<EditPdfScreen> {
         type: OverlayType.text,
         text: result,
         position: position ?? const Offset(0.5, 0.5),
-        size: size ?? const Size(150, 50),
+        // Default size 30% width, 10% height (roughly)
+        normalizedSize: normalizedSize ?? const Size(0.3, 0.1),
       ));
     }
   }
@@ -183,14 +187,24 @@ class _EditPdfScreenState extends ConsumerState<EditPdfScreen> {
                           // Calculate aspect ratio
                           final img = await decodeImageFromList(bytes);
                           final aspectRatio = img.width / img.height;
-                          final width = 150.0;
-                          final height = width / aspectRatio;
+
+                          // Default to 40% width
+                          final width = 0.4;
+
+                          // Actually, we must be careful. Normalized height depends on Page Aspect Ratio.
+                          // Real Ratio = (normW * pageW) / (normH * pageH) = (normW/normH) * (pageW/pageH)
+                          // We want Real Ratio = aspectRatio
+                          // normH = normW * (pageW/pageH) / aspectRatio
+
+                          final pageModel = _pages[_currentPage];
+                          final normH =
+                              width * pageModel.aspectRatio / aspectRatio;
 
                           _addOverlay(OverlayItem(
                             type: OverlayType.signature,
                             signatureBytes: bytes,
                             position: const Offset(0.5, 0.5),
-                            size: Size(width, height),
+                            normalizedSize: Size(width, normH),
                           ));
                         }
                         Navigator.pop(context);
@@ -227,7 +241,6 @@ class _EditPdfScreenState extends ConsumerState<EditPdfScreen> {
     }
   }
 
-  // Smart Insert Logic
   void _handleTap(
       TapUpDetails details, BoxConstraints constraints, double aspectRatio) {
     // If we have an item selected, deselect it
@@ -236,8 +249,6 @@ class _EditPdfScreenState extends ConsumerState<EditPdfScreen> {
       return;
     }
   }
-
-  // Note: _detectAndInsert was removed due to complexity issues.
 
   Future<void> _savePdf() async {
     setState(() => _isLoading = true);
@@ -263,22 +274,28 @@ class _EditPdfScreenState extends ConsumerState<EditPdfScreen> {
                 children: [
                   pw.Center(child: pw.Image(image, fit: pw.BoxFit.contain)),
                   ...pageOverlays.map((overlay) {
+                    // Convert normalized position/size to PDF points
                     final x = overlay.position.dx * pdfPageFormat.width;
                     final y = overlay.position.dy * pdfPageFormat.height;
 
+                    final w =
+                        overlay.normalizedSize.width * pdfPageFormat.width;
+                    final h =
+                        overlay.normalizedSize.height * pdfPageFormat.height;
+
                     if (overlay.type == OverlayType.text) {
                       return pw.Positioned(
-                        left: x - (overlay.size.width / 2),
-                        top: y - (overlay.size.height / 2),
+                        left: x - (w / 2),
+                        top: y - (h / 2),
                         child: pw.SizedBox(
-                          width: overlay.size.width,
-                          height: overlay.size.height,
+                          width: w,
+                          height: h,
                           // Use FittedBox to auto-scale text in PDF
                           child: pw.FittedBox(
                             fit: pw.BoxFit.contain,
                             child: pw.Text(
                               overlay.text ?? '',
-                              style: pw.TextStyle(
+                              style: const pw.TextStyle(
                                   fontSize: 40,
                                   color: PdfColors
                                       .black), // Large default size, scaled down
@@ -288,12 +305,12 @@ class _EditPdfScreenState extends ConsumerState<EditPdfScreen> {
                       );
                     } else {
                       return pw.Positioned(
-                        left: x - (overlay.size.width / 2),
-                        top: y - (overlay.size.height / 2),
+                        left: x - (w / 2),
+                        top: y - (h / 2),
                         child: pw.Image(
                           pw.MemoryImage(overlay.signatureBytes!),
-                          width: overlay.size.width,
-                          height: overlay.size.height,
+                          width: w,
+                          height: h,
                           fit: pw.BoxFit.fill,
                         ),
                       );
@@ -374,13 +391,15 @@ class _EditPdfScreenState extends ConsumerState<EditPdfScreen> {
               Expanded(
                 child: PageView.builder(
                   itemCount: _pages.length,
+                  physics: _isInteracting
+                      ? const NeverScrollableScrollPhysics()
+                      : const AlwaysScrollableScrollPhysics(),
                   onPageChanged: (index) => setState(() {
                     _currentPage = index;
                     _selectedItem = null;
                   }),
                   itemBuilder: (context, index) {
                     final pageModel = _pages[index];
-                    // No FutureBuilder needed!
                     return LayoutBuilder(
                       builder: (context, constraints) {
                         return GestureDetector(
@@ -416,13 +435,17 @@ class _EditPdfScreenState extends ConsumerState<EditPdfScreen> {
                                             constraints.maxWidth,
                                             constraints.maxWidth /
                                                 pageModel
-                                                    .aspectRatio), // Approx size, but widget uses relative
+                                                    .aspectRatio), // Layout size
                                         onTap: () => setState(
                                             () => _selectedItem = overlay),
-                                        onChanged: (pos, size) {
+                                        onInteractionStart: () => setState(
+                                            () => _isInteracting = true),
+                                        onInteractionEnd: () => setState(
+                                            () => _isInteracting = false),
+                                        onChanged: (pos, normSize) {
                                           setState(() {
                                             overlay.position = pos;
-                                            overlay.size = size;
+                                            overlay.normalizedSize = normSize;
                                           });
                                         },
                                         onDoubleTap: () =>
@@ -566,6 +589,8 @@ class _ResizableWidget extends StatefulWidget {
   final bool isSelected;
   final Size parentSize;
   final VoidCallback onTap;
+  final VoidCallback onInteractionStart;
+  final VoidCallback onInteractionEnd;
   final Function(Offset, Size) onChanged;
   final VoidCallback onDoubleTap;
 
@@ -574,6 +599,8 @@ class _ResizableWidget extends StatefulWidget {
     required this.isSelected,
     required this.parentSize,
     required this.onTap,
+    required this.onInteractionStart,
+    required this.onInteractionEnd,
     required this.onChanged,
     required this.onDoubleTap,
   });
@@ -585,22 +612,25 @@ class _ResizableWidget extends StatefulWidget {
 class _ResizableWidgetState extends State<_ResizableWidget> {
   Offset? _startDragPos;
   Offset? _startItemPos;
-  Size? _startItemSize;
+  Size? _startItemNormSize;
   double? _startAspectRatio;
 
   @override
   Widget build(BuildContext context) {
-    final left = widget.item.position.dx * widget.parentSize.width -
-        (widget.item.size.width / 2);
-    final top = widget.item.position.dy * widget.parentSize.height -
-        (widget.item.size.height / 2);
+    // Convert normalized size to screen pixels
+    final width = widget.item.normalizedSize.width * widget.parentSize.width;
+    final height = widget.item.normalizedSize.height * widget.parentSize.height;
+
+    final left =
+        widget.item.position.dx * widget.parentSize.width - (width / 2);
+    final top =
+        widget.item.position.dy * widget.parentSize.height - (height / 2);
 
     return Positioned(
       left: left,
       top: top,
-      width: widget.item.size.width +
-          (widget.isSelected ? 40 : 0), // buffer for handles
-      height: widget.item.size.height + (widget.isSelected ? 40 : 0),
+      width: width + (widget.isSelected ? 40 : 0), // buffer for handles
+      height: height + (widget.isSelected ? 40 : 0),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -608,13 +638,14 @@ class _ResizableWidgetState extends State<_ResizableWidget> {
           Positioned(
             top: widget.isSelected ? 20 : 0,
             left: widget.isSelected ? 20 : 0,
-            width: widget.item.size.width,
-            height: widget.item.size.height,
+            width: width,
+            height: height,
             child: GestureDetector(
               onTap: widget.onTap,
               onPanStart: (details) {
                 _startDragPos = details.globalPosition;
                 _startItemPos = widget.item.position;
+                widget.onInteractionStart();
                 widget.onTap();
               },
               onPanUpdate: (details) {
@@ -626,9 +657,11 @@ class _ResizableWidgetState extends State<_ResizableWidget> {
 
                 widget.onChanged(
                   Offset(_startItemPos!.dx + dx, _startItemPos!.dy + dy),
-                  widget.item.size,
+                  widget.item.normalizedSize,
                 );
               },
+              onPanEnd: (_) => widget.onInteractionEnd(),
+              onPanCancel: () => widget.onInteractionEnd(),
               onDoubleTap: widget.onDoubleTap,
               child: Container(
                 decoration: widget.isSelected
@@ -665,26 +698,41 @@ class _ResizableWidgetState extends State<_ResizableWidget> {
               child: GestureDetector(
                 onPanStart: (details) {
                   _startDragPos = details.globalPosition;
-                  _startItemSize = widget.item.size;
-                  _startAspectRatio =
-                      widget.item.size.width / widget.item.size.height;
+                  _startItemNormSize = widget.item.normalizedSize;
+                  // Ratio = Width / Height
+                  // Since we are operating on normalized values, the ratio must be calculated on screen pixels
+                  // or we must be consistent.
+                  // Let's use screen pixels for smoother aspect preservation.
+                  final currentW =
+                      _startItemNormSize!.width * widget.parentSize.width;
+                  final currentH =
+                      _startItemNormSize!.height * widget.parentSize.height;
+                  _startAspectRatio = currentW / currentH;
+                  widget.onInteractionStart();
                 },
                 onPanUpdate: (details) {
                   if (_startDragPos == null ||
-                      _startItemSize == null ||
+                      _startItemNormSize == null ||
                       _startAspectRatio == null) return;
+
                   final delta = details.globalPosition - _startDragPos!;
 
-                  // Aspect Ratio Locked Resize
-                  // We calculate based on Width change
-                  double newWidth = max(50.0, _startItemSize!.width + delta.dx);
+                  // Calculate new pixel width
+                  final startPixelW =
+                      _startItemNormSize!.width * widget.parentSize.width;
+                  double newPixelW = max(50.0, startPixelW + delta.dx);
 
-                  // Derive Height from valid Width to preserve Ratio
-                  double newHeight = newWidth / _startAspectRatio!;
+                  // Calculate new pixel height maintaining aspect ratio
+                  double newPixelH = newPixelW / _startAspectRatio!;
 
+                  // Convert back to normalized
                   widget.onChanged(
-                      widget.item.position, Size(newWidth, newHeight));
+                      widget.item.position,
+                      Size(newPixelW / widget.parentSize.width,
+                          newPixelH / widget.parentSize.height));
                 },
+                onPanEnd: (_) => widget.onInteractionEnd(),
+                onPanCancel: () => widget.onInteractionEnd(),
                 child: Container(
                   width: 30,
                   height: 30,
@@ -707,7 +755,7 @@ enum OverlayType { text, signature }
 
 class OverlayItem {
   Offset position; // Normalized (0-1) center position
-  Size size; // Logical pixels on screen
+  Size normalizedSize; // Normalized (0-1) size relative to page dimensions
   final OverlayType type;
   String? text;
   final Uint8List? signatureBytes;
@@ -715,7 +763,8 @@ class OverlayItem {
   OverlayItem({
     required this.position,
     required this.type,
-    required this.size,
+    // Renamed to avoid confusion with screen pixels
+    required this.normalizedSize,
     this.text,
     this.signatureBytes,
   });
