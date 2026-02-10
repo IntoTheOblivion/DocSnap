@@ -1,0 +1,68 @@
+name: docsnap_pdf_scanner
+description: A production-ready Flutter app to scan documents and export as PDF.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Navigation
+  go_router: ^13.2.0
+
+  # Scanning & PDF
+  google_mlkit_document_scanner: ^0.2.0
+  google_fonts: ^6.1.0
+  pdf: ^3.10.8
+  printing: ^5.12.0
+
+  # storage & Utils
+  path_provider: ^2.1.2
+  shared_preferences: ^2.2.2
+  open_file: ^3.3.2
+  share_plus: ^7.2.2
+  intl: ^0.19.0
+  uuid: ^4.3.3
+
+  # Icons
+  cupertino_icons: ^1.0.6
+  signature: ^6.3.0
+  image: ^4.5.4
+  file_picker: ^10.3.10
+  flutter_image_compress: ^2.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  build_runner: ^2.4.8
+  riverpod_generator: ^2.4.0
+  # AGGIUNTO: Pacchetto per generare le icone
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.0
+
+# CONFIGURAZIONE ICONE
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo.png"
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+
+flutter_native_splash:
+  color: "#FFFFFF" # Colore di sfondo della schermata
+  image: assets/images/logo.png # Il tuo logo
+  android: true
+  ios: true
+  fullscreen: true
