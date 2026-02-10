@@ -37,8 +37,7 @@ A powerful, production-ready Flutter application for scanning documents, editing
 
 1.  **Clone the repository**:
     ```bash
-    git clone https://github.com/yourusername/docsnap-pdf-scanner.git
-    cd docsnap-pdf-scanner
+    git clone https://github.com/IntoTheOblivion/DocSnap.git
     ```
 
 2.  **Install Dependencies**:
