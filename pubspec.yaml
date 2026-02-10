@@ -1,7 +1,7 @@
 name: docsnap_pdf_scanner
 description: A production-ready Flutter app to scan documents and export as PDF.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
